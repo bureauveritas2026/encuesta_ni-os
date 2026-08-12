@@ -210,7 +210,7 @@
 
 <script>
   /* =========================================================
-     CONFIGURACIÓN — edita estos dos valores antes de publicar
+     CONFIGURACIÓN
      ========================================================= */
   const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx334glhDntdCYX3HGeiO63gAne2IkLuUdVcvzgeF5RRc1jOkL9NTaybw53PoggJ5aeRA/exec";
   // Fecha y hora límite de la encuesta (mañana 12:00 p.m., hora de Lima UTC-5)
@@ -272,11 +272,32 @@
     }[m]));
   }
 
-  /* ---------- IP lookup + prefill for editing ---------- */
+  /* =========================================================
+     IDENTIFICADOR DE DISPOSITIVO (reemplaza a la IP)
+     ---------------------------------------------------------
+     Antes se usaba la IP pública para saber "quién ya respondió",
+     pero varias personas conectadas al mismo wifi del hotel
+     comparten la misma IP, así que a todas les aparecían los
+     datos de la última persona que respondió en esa red.
+     Ahora se genera un identificador único que vive SOLO en el
+     navegador de cada persona (localStorage). Así cada quien ve
+     y edita únicamente su propia respuesta.
+     ========================================================= */
+  const DEVICE_KEY = 'encuesta_dia_del_nino_device_id';
+
+  function getDeviceId(){
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id){
+      id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  }
+
   const form = document.getElementById('surveyForm');
   const submitBtn = document.getElementById('submitBtn');
   const statusMsg = document.getElementById('statusMsg');
-  let userIp = null;
+  const deviceId = getDeviceId();
   let isEditing = false;
 
   function showStatus(text, type){
@@ -285,27 +306,17 @@
   }
 
   async function init(){
-    try{
-      const ipRes = await fetch('https://api.ipify.org?format=json');
-      const ipData = await ipRes.json();
-      userIp = ipData.ip;
-    }catch(err){
-      showStatus('No pudimos verificar tu conexión. Puedes seguir llenando el formulario.', 'info');
-    }
-
-    if (!userIp || SCRIPT_URL.startsWith('PEGA_AQUI')){
-      return; // sin backend configurado aún, o sin IP: se deja el formulario en modo "nuevo"
-    }
+    if (SCRIPT_URL.startsWith('PEGA_AQUI')) return;
 
     try{
-      const res = await fetch(`${SCRIPT_URL}?ip=${encodeURIComponent(userIp)}`);
+      const res = await fetch(`${SCRIPT_URL}?ip=${encodeURIComponent(deviceId)}`);
       const data = await res.json();
       if (data.found){
         isEditing = true;
         fillForm(data.data);
         submitBtn.textContent = '✏️ Actualizar mi confirmación';
         submitBtn.classList.add('editing');
-        showStatus('Ya habías respondido esta encuesta. Puedes editar tus datos y volver a enviar.', 'info');
+        showStatus('Ya habías respondido esta encuesta desde este dispositivo. Puedes editar tus datos y volver a enviar.', 'info');
       }
     }catch(err){
       // si falla la verificación, se deja como envío nuevo
@@ -345,7 +356,7 @@
     }
 
     const payload = {
-      ip: userIp || 'sin-ip',
+      ip: deviceId, // se envía en el campo "ip" para no tener que tocar el Apps Script ya desplegado
       nombre: document.getElementById('nombre').value.trim(),
       area: document.getElementById('area').value,
       cantidadNinos: cantidad,
